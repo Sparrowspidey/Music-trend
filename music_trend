@@ -1,0 +1,195 @@
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+import webbrowser
+import pygame
+import requests
+import tempfile
+import os
+
+
+#   Spotify Authentication Setup
+#   Uses OAuth to securely connect to Spotify API.
+
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+    client_id="client ID",
+    client_secret="client Secret",
+    redirect_uri="http://127.0.0.1:8080/callback", 
+    scope="user-read-playback-state,user-modify-playback-state"
+))
+
+
+def get_playlist_id(category):
+    # Dynamically find playlist for the selected category keyword.
+    # Converts simple names (like 'global', 'love') into Spotify search queries.
+
+    category_to_query = {
+        "global": "Top 50 Global",
+        "india": "India",
+        "love": "Love Songs",
+        "breakup": "Sad Songs",
+        "party": "Party Hits",
+        "Mass": "Mass"
+    }
+
+    # Get search query based on user selection
+    query = category_to_query.get(category.lower(), category)
+
+    # Search for a playlist on Spotify
+    results = sp.search(q=query, type='playlist', limit=1)
+
+    if not results['playlists']['items']:
+        print("No playlist found for that category.")
+        return None
+
+    playlist = results['playlists']['items'][0]
+
+    print(f"\n Found playlist: {playlist['name']}")
+    return playlist['id']
+
+
+def show_top_tracks(playlist_id):
+    # Fetches and displays top 5 tracks from a playlist.
+
+    try:
+        results = sp.playlist_tracks(playlist_id, limit=5)
+        tracks = []
+        print("\nTop Tracks:")
+
+        for idx, item in enumerate(results['items'], start=1):
+            track = item['track']
+            name = track['name']
+            artist = track['artists'][0]['name']
+            preview = track['preview_url']  # 30-second preview link
+            url = track['external_urls']['spotify']
+
+            print(f"{idx}. {name} - {artist}")
+            tracks.append((name, artist, preview, url))
+
+        return tracks
+
+    except Exception:
+        print("Could not fetch playlist tracks.")
+        return []
+
+
+def play_preview(preview_url):
+    # Plays a 30-second song preview in the console.
+    # Downloads the audio temporarily and plays using pygame.
+
+    if not preview_url:
+        print("No preview available.")
+        return
+
+    print(" Downloading preview...")
+
+    try:
+        response = requests.get(preview_url)
+
+        if response.status_code != 200:
+            print("Failed to download preview.")
+            return
+
+        # Save audio temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+            temp_file.write(response.content)
+            temp_path = temp_file.name
+
+        # Initialize pygame audio system
+        pygame.mixer.init()
+        pygame.mixer.music.load(temp_path)
+        pygame.mixer.music.play()
+
+        print("Playing 30-second preview... (press Enter to stop)")
+        input()  # Wait for user to press Enter
+        pygame.mixer.music.stop()
+        pygame.mixer.quit()
+
+        # Delete the temporary file
+        os.remove(temp_path)
+        print("Cleaned up preview file.\n")
+
+    except Exception as e:
+        print("Error playing preview:", e)
+
+
+def main():
+    # Main user menu for selecting categories and tracks.
+
+    print("\n===  Music Trend Finder ===")
+
+    while True:
+        # Display menu
+        print("\nChoose a category:")
+        print("1. Global")
+        print("2. National (India)")
+        print("3. Love")
+        print("4. Breakup")
+        print("5. Party")
+        print("6. Mass")
+        print("7. Exit")
+
+        choice = input("Enter your choice: ").strip().lower()
+
+        # Map number input to category
+        categories = {
+            "1": "global",
+            "2": "india",
+            "3": "love",
+            "4": "breakup",
+            "5": "party",
+            "6": "Mass"
+        }
+
+        if choice == "7" or choice == "exit":
+            print("\n Goodbye!")
+            break
+
+        # Get corresponding category string
+        category = categories.get(choice, choice)
+
+        # Find matching playlist on Spotify
+        playlist_id = get_playlist_id(category)
+        if not playlist_id:
+            continue
+
+        # Fetch and show top 5 tracks
+        tracks = show_top_tracks(playlist_id)
+        if not tracks:
+            continue
+
+        # Let user choose a track number
+        while True:
+
+            try:
+                sel = int(input("\nSelect a track number (1-5): "))
+                if 1 <= sel <=5:
+                    name, artist, preview, url = tracks[sel - 1]
+                    break
+
+                else:
+                    print("Invalid track number. Please try again.")
+
+            except ValueError:
+                print("Please enter a number.")
+            
+
+        # Let user choose action: Play preview or open Spotify
+        if preview:
+            action = input("Type 'p' to play 30-sec preview or 'o' to open on Spotify: ").lower()
+
+            if action == "p":
+                play_preview(preview)
+
+            elif action == "o":
+                print(" Opening in Spotify...")
+                webbrowser.open(url)
+
+        else:
+            # If no preview available, open Spotify link
+            print("No preview available — opening on Spotify instead.")
+            webbrowser.open(url)
+
+
+# Run program
+if __name__ == "__main__":
+    main()
